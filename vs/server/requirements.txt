@@ -1,0 +1,2 @@
+flask
+openai # or another AI summarization library
