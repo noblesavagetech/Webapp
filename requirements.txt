@@ -1,4 +1,8 @@
+
 openai
 Flask
+flask_sqlalchemy
+flask_login
 requests
 psycopg2-binary
+Werkzeug
