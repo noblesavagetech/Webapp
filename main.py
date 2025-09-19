@@ -1,11 +1,9 @@
 import os
 import re
-from dotenv import load_dotenv
 import requests
 from openai import OpenAI
 
-load_dotenv()
-OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 def openai_with_timeout(timeout=120):
     return OpenAI(
         base_url="https://openrouter.ai/api/v1",
@@ -1361,5 +1359,6 @@ if __name__ == '__main__':
     # Automatically create tables for SQLite if they don't exist
     with app.app_context():
         db.create_all()
-    # Run the application on port 5001 with increased timeout settings
-    app.run(debug=True, host='0.0.0.0', port=5001, threaded=True, use_reloader=False)
+    import os
+    port = int(os.environ.get("PORT", 5000))
+    app.run(debug=True, host='0.0.0.0', port=port, threaded=True, use_reloader=False)
