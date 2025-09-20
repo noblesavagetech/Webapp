@@ -412,10 +412,36 @@ def delete_chapter(story_id, chapter_id):
     db.session.commit()
     return redirect(url_for('chapters', story_id=story_id))
 
-@app.route('/story/<int:story_id>/characters')
+@app.route('/story/<int:story_id>/characters', methods=['GET', 'POST'])
 @login_required
 def characters(story_id):
     story = Story.query.get_or_404(story_id)
+    # Handle add character
+    if request.method == 'POST' and request.form.get('add_character'):
+        name = request.form.get('char_name', '').strip()
+        traits = request.form.get('char_traits', '').strip()
+        backstory = request.form.get('char_backstory', '').strip()
+        if name:
+            char = Character(story_id=story_id, name=name, traits=traits, backstory=backstory)
+            db.session.add(char)
+            db.session.commit()
+        return redirect(url_for('characters', story_id=story_id))
+    # Handle edit character
+    if request.method == 'POST' and request.form.get('edit_character_id'):
+        char_id = int(request.form.get('edit_character_id'))
+        char = Character.query.get_or_404(char_id)
+        char.name = request.form.get('char_name', char.name)
+        char.traits = request.form.get('char_traits', char.traits)
+        char.backstory = request.form.get('char_backstory', char.backstory)
+        db.session.commit()
+        return redirect(url_for('characters', story_id=story_id))
+    # Handle delete character
+    if request.method == 'POST' and request.form.get('delete_character_id'):
+        char_id = int(request.form.get('delete_character_id'))
+        char = Character.query.get_or_404(char_id)
+        db.session.delete(char)
+        db.session.commit()
+        return redirect(url_for('characters', story_id=story_id))
     chars = Character.query.filter_by(story_id=story_id).all()
     return render_template_string('''
     <!DOCTYPE html>
