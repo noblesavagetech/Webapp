@@ -3,7 +3,7 @@ import re
 import requests
 from openai import OpenAI
 
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY") or "YOUR_ACTUAL_API_KEY_HERE"
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 def openai_with_timeout(timeout=120):
     return OpenAI(
         base_url="https://openrouter.ai/api/v1",
