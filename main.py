@@ -617,12 +617,17 @@ def edit_chapter(story_id, chapter_id):
     story = Story.query.get_or_404(story_id)
     # Handle Save Chapter
     if request.method == 'POST' and not any([
-        'query_prose_ai' in request.form,
+        'query_prose_deepseek' in request.form,
+        'query_prose_free_deepseek' in request.form,
+        'query_prose_ms' in request.form,
         'query_prose_kimi' in request.form,
-        'query_beat_ai' in request.form,
+        'query_beat_deepseek' in request.form,
+        'query_beat_free_deepseek' in request.form,
+        'query_beat_ms' in request.form,
         'query_beat_kimi' in request.form,
         'query_summary_ai' in request.form,
-        'add_beat' in request.form
+        'add_beat' in request.form,
+        'add_world_element' in request.form
     ]):
         chapter.title = request.form.get('title', chapter.title)
         chapter.summary = request.form.get('summary', chapter.summary)
@@ -636,6 +641,15 @@ def edit_chapter(story_id, chapter_id):
         if beat_description:
             new_beat = BeatScene(chapter_id=chapter_id, description=beat_description, order=beat_order)
             db.session.add(new_beat)
+            db.session.commit()
+        return redirect(url_for('edit_chapter', story_id=story_id, chapter_id=chapter_id))
+    # Handle Add World Element
+    if request.method == 'POST' and 'add_world_element' in request.form:
+        category = request.form.get('world_category', 'Settings')
+        description = request.form.get('world_description', '')
+        if description:
+            element = WorldBuildingElement(chapter_id=chapter_id, category=category, description=description)
+            db.session.add(element)
             db.session.commit()
         return redirect(url_for('edit_chapter', story_id=story_id, chapter_id=chapter_id))
     # Ensure 'characters' is a list of Character objects, not a function
@@ -667,6 +681,24 @@ def edit_chapter(story_id, chapter_id):
     ai_prose = request.form.get('ai_prose', '')
     ai_prose_kimi = request.form.get('ai_prose_kimi', '')
     ai_beat_scene_kimi = request.form.get('ai_beat_scene_kimi', '')
+    ai_prose_free_deepseek = request.form.get('ai_prose_free_deepseek', '')
+    ai_beat_scene_free_deepseek = request.form.get('ai_beat_scene_free_deepseek', '')
+    default_beat_preset = (
+        "Your role: You are a narrative designer.\n\n"
+        "Your task: Take the single beat provided and expand it into a detailed, action-oriented sequence of events. Do not simply describe the beat; show the steps, decisions, and consequences that unfold within that moment.\n\n"
+        "Instructions:\n\n"
+        "Identify the core action: First, pinpoint the central action or decision within the given beat. What is the one key thing that happens?\n\n"
+        "Break it down: Unpack that single action into a series of smaller, sequential beats. Think about the 'before,' 'during,' and 'after' of the moment.\n\n"
+        "Setup/Inciting Event: What leads directly to this beat? What decision or discovery is made?\n\n"
+        "The Action: What are the specific, physical or verbal actions that unfold? Who does what to whom?\n\n"
+        "Immediate Consequence: What is the direct result of this action? How does the situation change for the character(s)?\n\n"
+        "Translate to action: Use active, event-driven language. For example, if the beat is 'Maya gets caught,' your expansion should include beats like: 'Maya sees the security team enter the room,' 'She dives for the server rack,' and 'She is tackled just before she can hit the upload key.'\n\n"
+        "Maintain intent: Ensure the expanded sequence remains true to the original story's tone and character motivations. If the original beat is tense, the sequence should build tension. If it's a moment of triumph, the sequence should reflect that.\n\n"
+        "Example Beat (for you to provide):"
+    )
+    beat_preset = request.form.get('beat_preset', default_beat_preset)
+    ai_beat_scene = request.form.get('ai_beat_scene', '')
+    ai_prose = request.form.get('ai_prose', '')
     # Handle AI prose generator (Kimi)
     if request.method == 'POST' and 'query_prose_kimi' in request.form:
         prose_preset = request.form.get('prose_preset', default_prose_preset)
@@ -676,12 +708,13 @@ def edit_chapter(story_id, chapter_id):
         chapter_text = chapter.text or ''
         chapter_words = chapter_text.split()
         last_2000 = ' '.join(chapter_words[-2000:]) if len(chapter_words) > 0 else ''
+        world_elements_str = '\n'.join([f"- {w.category}: {w.description}" for w in world_elements]) if world_elements else 'None'
         prompt = (
-            f"{prose_preset}\n\nCharacters in scene: {char_str}\nScene: {scene_text}\n\nRecent chapter context (last 2000 words):\n{last_2000}"
+            f"{prose_preset}\n\nCharacters in scene: {char_str}\nScene: {scene_text}\n\nRecent chapter context (last 2000 words):\n{last_2000}\n\nWorld Building Elements:\n{world_elements_str}"
         )
         try:
             response = client.chat.completions.create(
-                model="moonshotai/kimi-k2:free",
+                model="moonshotai/kimi-k2",
                 messages=[{"role": "user", "content": prompt}],
                 extra_headers={
                     "HTTP-Referer": os.getenv("SITE_URL", "http://localhost:5000"),
@@ -708,7 +741,7 @@ def edit_chapter(story_id, chapter_id):
         )
         try:
             response = client.chat.completions.create(
-                model="moonshotai/kimi-k2:free",
+                model="moonshotai/kimi-k2",
                 messages=[{"role": "user", "content": beat_prompt}],
                 extra_headers={
                     "HTTP-Referer": os.getenv("SITE_URL", "http://localhost:5000"),
@@ -719,25 +752,8 @@ def edit_chapter(story_id, chapter_id):
             ai_beat_scene_kimi = response.choices[0].message.content.strip()
         except Exception as e:
             ai_beat_scene_kimi = f"[AI Error: {e}]"
-    default_beat_preset = (
-        "Your role: You are a narrative designer.\n\n"
-        "Your task: Take the single beat provided and expand it into a detailed, action-oriented sequence of events. Do not simply describe the beat; show the steps, decisions, and consequences that unfold within that moment.\n\n"
-        "Instructions:\n\n"
-        "Identify the core action: First, pinpoint the central action or decision within the given beat. What is the one key thing that happens?\n\n"
-        "Break it down: Unpack that single action into a series of smaller, sequential beats. Think about the 'before,' 'during,' and 'after' of the moment.\n\n"
-        "Setup/Inciting Event: What leads directly to this beat? What decision or discovery is made?\n\n"
-        "The Action: What are the specific, physical or verbal actions that unfold? Who does what to whom?\n\n"
-        "Immediate Consequence: What is the direct result of this action? How does the situation change for the character(s)?\n\n"
-        "Translate to action: Use active, event-driven language. For example, if the beat is 'Maya gets caught,' your expansion should include beats like: 'Maya sees the security team enter the room,' 'She dives for the server rack,' and 'She is tackled just before she can hit the upload key.'\n\n"
-        "Maintain intent: Ensure the expanded sequence remains true to the original story's tone and character motivations. If the original beat is tense, the sequence should build tension. If it's a moment of triumph, the sequence should reflect that.\n\n"
-        "Example Beat (for you to provide):"
-    )
-    beat_preset = request.form.get('beat_preset', default_beat_preset)
-    ai_beat_scene = request.form.get('ai_beat_scene', '')
-    ai_summary = request.form.get('ai_summary', '')
-
-    # Handle AI query form submission for prose (only if not Kimi)
-    if request.method == 'POST' and 'query_prose_ai' in request.form and 'query_prose_kimi' not in request.form:
+    # Handle AI prose generator (MS)
+    if request.method == 'POST' and 'query_prose_ms' in request.form:
         prose_preset = request.form.get('prose_preset', default_prose_preset)
         scene_text = request.form.get('text', '')
         selected_characters = request.form.getlist('selected_characters_prose')
@@ -745,8 +761,62 @@ def edit_chapter(story_id, chapter_id):
         chapter_text = chapter.text or ''
         chapter_words = chapter_text.split()
         last_2000 = ' '.join(chapter_words[-2000:]) if len(chapter_words) > 0 else ''
+        world_elements_str = '\n'.join([f"- {w.category}: {w.description}" for w in world_elements]) if world_elements else 'None'
         prompt = (
-            f"{prose_preset}\n\nCharacters in scene: {char_str}\nScene: {scene_text}\n\nRecent chapter context (last 2000 words):\n{last_2000}"
+            f"{prose_preset}\n\nCharacters in scene: {char_str}\nScene: {scene_text}\n\nRecent chapter context (last 2000 words):\n{last_2000}\n\nWorld Building Elements:\n{world_elements_str}"
+        )
+        try:
+            response = client.chat.completions.create(
+                model="microsoft/mai-ds-r1",
+                messages=[{"role": "user", "content": prompt}],
+                extra_headers={
+                    "HTTP-Referer": os.getenv("SITE_URL", "http://localhost:5000"),
+                    "X-Title": os.getenv("SITE_NAME", "StoryEngine")
+                },
+                extra_body={}
+            )
+            ai_prose_ms = response.choices[0].message.content.strip()
+        except Exception as e:
+            ai_prose_ms = f"[AI Error: {e}]"
+    # Handle Beat/Scene AI generator (MS)
+    if request.method == 'POST' and 'query_beat_ms' in request.form:
+        beat_preset = request.form.get('beat_preset', default_beat_preset)
+        beat_scene_input = request.form.get('beat_scene_input', '')
+        selected_characters_beat = request.form.getlist('selected_characters_beat')
+        char_str_beat = ', '.join(selected_characters_beat) if selected_characters_beat else 'no characters'
+        chapter_text = chapter.text or ''
+        chapter_words = chapter_text.split()
+        last_2000 = ' '.join(chapter_words[-2000:]) if len(chapter_words) > 0 else ''
+        world_elements_str = '\n'.join([f"- {w.category}: {w.description}" for w in world_elements]) if world_elements else 'None'
+        beat_prompt = (
+            f"{beat_preset}\n\nCharacters in scene: {char_str_beat}\nBeat/Scene Input: {beat_scene_input}\n\nRecent chapter context (last 2000 words):\n{last_2000}\n\nWorld Building Elements:\n{world_elements_str}"
+        )
+        try:
+            response = client.chat.completions.create(
+                model="microsoft/mai-ds-r1",
+                messages=[{"role": "user", "content": beat_prompt}],
+                extra_headers={
+                    "HTTP-Referer": os.getenv("SITE_URL", "http://localhost:5000"),
+                    "X-Title": os.getenv("SITE_NAME", "StoryEngine")
+                },
+                extra_body={}
+            )
+            ai_beat_scene_ms = response.choices[0].message.content.strip()
+        except Exception as e:
+            ai_beat_scene_ms = f"[AI Error: {e}]"
+    # Handle AI prose generator (Free DeepSeek)
+    if request.method == 'POST' and 'query_prose_free_deepseek' in request.form:
+        print("Free DeepSeek prose button clicked")
+        prose_preset = request.form.get('prose_preset', default_prose_preset)
+        scene_text = request.form.get('text', '')
+        selected_characters = request.form.getlist('selected_characters_prose')
+        char_str = ', '.join(selected_characters) if selected_characters else 'no characters'
+        chapter_text = chapter.text or ''
+        chapter_words = chapter_text.split()
+        last_2000 = ' '.join(chapter_words[-2000:]) if len(chapter_words) > 0 else ''
+        world_elements_str = '\n'.join([f"- {w.category}: {w.description}" for w in world_elements]) if world_elements else 'None'
+        prompt = (
+            f"{prose_preset}\n\nCharacters in scene: {char_str}\nScene: {scene_text}\n\nRecent chapter context (last 2000 words):\n{last_2000}\n\nWorld Building Elements:\n{world_elements_str}"
         )
         try:
             response = client.chat.completions.create(
@@ -758,11 +828,74 @@ def edit_chapter(story_id, chapter_id):
                 },
                 extra_body={}
             )
-            ai_prose = response.choices[0].message.content.strip()
+            ai_prose_free_deepseek = response.choices[0].message.content.strip()
+        except Exception as e:
+            ai_prose_free_deepseek = f"[AI Error: {e}]"
+    # Handle Beat/Scene AI generator (Free DeepSeek)
+    if request.method == 'POST' and 'query_beat_free_deepseek' in request.form:
+        print("Free DeepSeek beat button clicked")
+        beat_preset = request.form.get('beat_preset', default_beat_preset)
+        beat_scene_input = request.form.get('beat_scene_input', '')
+        selected_characters_beat = request.form.getlist('selected_characters_beat')
+        char_str_beat = ', '.join(selected_characters_beat) if selected_characters_beat else 'no characters'
+        chapter_text = chapter.text or ''
+        chapter_words = chapter_text.split()
+        last_2000 = ' '.join(chapter_words[-2000:]) if len(chapter_words) > 0 else ''
+        world_elements_str = '\n'.join([f"- {w.category}: {w.description}" for w in world_elements]) if world_elements else 'None'
+        beat_prompt = (
+            f"{beat_preset}\n\nCharacters in scene: {char_str_beat}\nBeat/Scene Input: {beat_scene_input}\n\nRecent chapter context (last 2000 words):\n{last_2000}\n\nWorld Building Elements:\n{world_elements_str}"
+        )
+        try:
+            response = client.chat.completions.create(
+                model="deepseek/deepseek-r1-0528:free",
+                messages=[{"role": "user", "content": beat_prompt}],
+                extra_headers={
+                    "HTTP-Referer": os.getenv("SITE_URL", "http://localhost:5000"),
+                    "X-Title": os.getenv("SITE_NAME", "StoryEngine")
+                },
+                extra_body={}
+            )
+            ai_beat_scene_free_deepseek = response.choices[0].message.content.strip()
+        except Exception as e:
+            ai_beat_scene_free_deepseek = f"[AI Error: {e}]"
+    beat_preset = request.form.get('beat_preset', default_beat_preset)
+    ai_beat_scene = request.form.get('ai_beat_scene', '')
+    ai_summary = request.form.get('ai_summary', '')
+    ai_prose_deepseek = request.form.get('ai_prose_deepseek', '')
+    ai_prose_ms = request.form.get('ai_prose_ms', '')
+    ai_prose_kimi = request.form.get('ai_prose_kimi', '')
+    ai_beat_scene_deepseek = request.form.get('ai_beat_scene_deepseek', '')
+    ai_beat_scene_ms = request.form.get('ai_beat_scene_ms', '')
+    ai_beat_scene_kimi = request.form.get('ai_beat_scene_kimi', '')
+
+    # Handle AI query form submission for prose (only if not Kimi)
+    if request.method == 'POST' and 'query_prose_deepseek' in request.form:
+        prose_preset = request.form.get('prose_preset', default_prose_preset)
+        scene_text = request.form.get('text', '')
+        selected_characters = request.form.getlist('selected_characters_prose')
+        char_str = ', '.join(selected_characters) if selected_characters else 'no characters'
+        chapter_text = chapter.text or ''
+        chapter_words = chapter_text.split()
+        last_2000 = ' '.join(chapter_words[-2000:]) if len(chapter_words) > 0 else ''
+        world_elements_str = '\n'.join([f"- {w.category}: {w.description}" for w in world_elements]) if world_elements else 'None'
+        prompt = (
+            f"{prose_preset}\n\nCharacters in scene: {char_str}\nScene: {scene_text}\n\nRecent chapter context (last 2000 words):\n{last_2000}\n\nWorld Building Elements:\n{world_elements_str}"
+        )
+        try:
+            response = client.chat.completions.create(
+                model="deepseek/deepseek-chat-v3.1",
+                messages=[{"role": "user", "content": prompt}],
+                extra_headers={
+                    "HTTP-Referer": os.getenv("SITE_URL", "http://localhost:5000"),
+                    "X-Title": os.getenv("SITE_NAME", "StoryEngine")
+                },
+                extra_body={}
+            )
+            ai_prose_deepseek = response.choices[0].message.content.strip()
         except Exception as e:
             ai_prose = f"[AI Error: {e}]"
     # Handle Beat/Scene AI generator (only if not Kimi)
-    if request.method == 'POST' and 'query_beat_ai' in request.form and 'query_beat_kimi' not in request.form:
+    if request.method == 'POST' and 'query_beat_deepseek' in request.form:
         beat_preset = request.form.get('beat_preset', '')
         beat_scene_input = request.form.get('beat_scene_input', '')
         # Use only the characters selected in the beat/scene form
@@ -781,7 +914,7 @@ def edit_chapter(story_id, chapter_id):
         )
         try:
             response = client.chat.completions.create(
-                model="deepseek/deepseek-r1-0528:free",
+                model="deepseek/deepseek-chat-v3.1",
                 messages=[{"role": "user", "content": beat_prompt}],
                 extra_headers={
                     "HTTP-Referer": os.getenv("SITE_URL", "http://localhost:5000"),
@@ -789,7 +922,7 @@ def edit_chapter(story_id, chapter_id):
                 },
                 extra_body={}
             )
-            ai_beat_scene = response.choices[0].message.content.strip()
+            ai_beat_scene_deepseek = response.choices[0].message.content.strip()
         except Exception as e:
             ai_beat_scene = f"[AI Error: {e}]"
     if request.method == 'POST' and 'query_summary_ai' in request.form:
@@ -799,7 +932,7 @@ def edit_chapter(story_id, chapter_id):
         )
         try:
             response = client.chat.completions.create(
-                model="deepseek/deepseek-r1-0528:free",
+                model="deepseek/deepseek-chat-v3.1",
                 messages=[{"role": "user", "content": summary_prompt}],
                 extra_headers={
                     "HTTP-Referer": os.getenv("SITE_URL", "http://localhost:5000"),
@@ -810,33 +943,7 @@ def edit_chapter(story_id, chapter_id):
             ai_summary = response.choices[0].message.content.strip()
         except Exception as e:
             ai_summary = f"[AI Error: {e}]"
-        # Only use selected characters and scene input
-        selected_characters = request.form.getlist('selected_characters_prose')
-        scene_text = request.form.get('text', '')
-        chapter_text = chapter.text or ''
-        # Get last 2000 words from chapter text
-        chapter_words = chapter_text.split()
-        last_2000 = ' '.join(chapter_words[-2000:]) if len(chapter_words) > 0 else ''
-        char_str = ', '.join(selected_characters) if selected_characters else 'no characters'
-        prompt = (
-            f"{prose_preset}\n\n"
-            f"Characters in scene: {char_str}\n"
-            f"Scene: {scene_text}\n\n"
-            f"Recent chapter context (last 2000 words):\n{last_2000}"
-        )
-        try:
-            response = client.chat.completions.create(
-                model="deepseek/deepseek-r1-0528:free",
-                messages=[{"role": "user", "content": prompt}],
-                extra_headers={
-                    "HTTP-Referer": os.getenv("SITE_URL", "http://localhost:5000"),
-                    "X-Title": os.getenv("SITE_NAME", "StoryEngine")
-                },
-                extra_body={}
-            )
-            ai_prose = response.choices[0].message.content.strip()
-        except Exception as e:
-            ai_prose = f"[AI Error: {e}]"
+
 
     # Modern chapter edit UI with character selection, AI integration, and all features
     # Add link to chapter selection page
@@ -905,9 +1012,14 @@ def edit_chapter(story_id, chapter_id):
                         }
                         </script>
                         <textarea name="ai_prose" rows="6" class="w-full p-2 border rounded-lg bg-gray-100" readonly>{{ ai_prose }}</textarea>
-                        <button type="submit" class="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 mt-2">Query AI</button>
-                        <button type="submit" name="query_prose_kimi" value="1" class="bg-pink-600 text-white px-4 py-2 rounded-lg hover:bg-pink-700 mt-2">Query AI Kimi</button>
+                        <button type="submit" name="query_prose_deepseek" value="1" class="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 mt-2">Query DeepSeek</button>
+                        <button type="submit" name="query_prose_ms" value="1" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 mt-2">Query MS</button>
+                        <button type="submit" name="query_prose_kimi" value="1" class="bg-pink-600 text-white px-4 py-2 rounded-lg hover:bg-pink-700 mt-2">Query Kimi</button>
+                        <button type="submit" name="query_prose_free_deepseek" value="1" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 mt-2">Query Free DeepSeek</button>
+                        <textarea name="ai_prose_deepseek" rows="6" class="w-full p-2 border rounded-lg bg-purple-100" readonly>{{ ai_prose_deepseek }}</textarea>
+                        <textarea name="ai_prose_ms" rows="6" class="w-full p-2 border rounded-lg bg-blue-100" readonly>{{ ai_prose_ms }}</textarea>
                         <textarea name="ai_prose_kimi" rows="6" class="w-full p-2 border rounded-lg bg-pink-100" readonly>{{ ai_prose_kimi }}</textarea>
+                        <textarea name="ai_prose_free_deepseek" rows="6" class="w-full p-2 border rounded-lg bg-green-100" readonly>{{ ai_prose_free_deepseek }}</textarea>
                     </form>
                 </div>
                 <!-- Beat/Scene AI Generator -->
@@ -946,9 +1058,14 @@ def edit_chapter(story_id, chapter_id):
                         }
                         </script>
                         <textarea name="ai_beat_scene" rows="6" class="w-full p-2 border rounded-lg bg-gray-100" readonly>{{ ai_beat_scene }}</textarea>
-                        <button type="submit" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 mt-2">Query AI</button>
-                        <button type="submit" name="query_beat_kimi" value="1" class="bg-pink-600 text-white px-4 py-2 rounded-lg hover:bg-pink-700 mt-2">Query AI Kimi</button>
+                        <button type="submit" name="query_beat_deepseek" value="1" class="bg-indigo-600 text-white px-4 py-2 rounded-lg hover:bg-indigo-700 mt-2">Query DeepSeek</button>
+                        <button type="submit" name="query_beat_ms" value="1" class="bg-teal-600 text-white px-4 py-2 rounded-lg hover:bg-teal-700 mt-2">Query MS</button>
+                        <button type="submit" name="query_beat_kimi" value="1" class="bg-pink-600 text-white px-4 py-2 rounded-lg hover:bg-pink-700 mt-2">Query Kimi</button>
+                        <button type="submit" name="query_beat_free_deepseek" value="1" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 mt-2">Query Free DeepSeek</button>
+                        <textarea name="ai_beat_scene_deepseek" rows="6" class="w-full p-2 border rounded-lg bg-indigo-100" readonly>{{ ai_beat_scene_deepseek }}</textarea>
+                        <textarea name="ai_beat_scene_ms" rows="6" class="w-full p-2 border rounded-lg bg-teal-100" readonly>{{ ai_beat_scene_ms }}</textarea>
                         <textarea name="ai_beat_scene_kimi" rows="6" class="w-full p-2 border rounded-lg bg-pink-100" readonly>{{ ai_beat_scene_kimi }}</textarea>
+                        <textarea name="ai_beat_scene_free_deepseek" rows="6" class="w-full p-2 border rounded-lg bg-green-100" readonly>{{ ai_beat_scene_free_deepseek }}</textarea>
                     </form>
                 </div>
             </div>
@@ -994,7 +1111,7 @@ def edit_chapter(story_id, chapter_id):
                 {% for w in world_elements %}
                     <li class="border-b py-2 flex justify-between items-center">
                         <span>{{ w.category }}: {{ w.description }}</span>
-                        <a href="/story/{{ story_id }}/world/{{ w.id }}/edit" class="text-blue-600 hover:underline">Edit</a>
+                        <a href="/story/{{ story_id }}/world_element/{{ w.id }}/edit" class="text-blue-600 hover:underline">Edit</a>
                     </li>
                 {% else %}
                     <li>No world building elements yet.</li>
@@ -1114,7 +1231,13 @@ def edit_chapter(story_id, chapter_id):
     ai_summary=ai_summary,
     beat_preset=beat_preset,
     ai_beat_scene=ai_beat_scene,
-    ai_beat_scene_kimi=ai_beat_scene_kimi)
+    ai_beat_scene_kimi=ai_beat_scene_kimi,
+    ai_prose_deepseek=ai_prose_deepseek,
+    ai_prose_ms=ai_prose_ms,
+    ai_prose_free_deepseek=ai_prose_free_deepseek,
+    ai_beat_scene_deepseek=ai_beat_scene_deepseek,
+    ai_beat_scene_ms=ai_beat_scene_ms,
+    ai_beat_scene_free_deepseek=ai_beat_scene_free_deepseek)
     edit_beat_id = request.form.get('edit_beat_id') if request.method == 'POST' else None
 
     # Characters in Scene Autocomplete Logic
@@ -1250,6 +1373,50 @@ def edit_beat(story_id, beat_id):
     </form>
     <a href="/story/{story_id}/beats">Back</a>
     '''
+
+# --- EDIT WORLD BUILDING ELEMENT ---
+@app.route('/story/<int:story_id>/world_element/<int:element_id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_world_element(story_id, element_id):
+    element = WorldBuildingElement.query.get_or_404(element_id)
+    chapter = Chapter.query.get(element.chapter_id)
+    if chapter.story_id != story_id:
+        return 'Unauthorized', 403
+    if request.method == 'POST':
+        element.category = request.form.get('category', element.category)
+        element.description = request.form.get('description', element.description)
+        db.session.commit()
+        return redirect(url_for('edit_chapter', story_id=story_id, chapter_id=element.chapter_id))
+    return render_template_string('''
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Edit World Building Element</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+    </head>
+    <body class="bg-gray-100 min-h-screen flex flex-col items-center p-6">
+        <div class="bg-white rounded-xl shadow-lg w-full max-w-lg p-6 space-y-6">
+            <h2 class="text-xl font-bold text-gray-800">Edit World Building Element</h2>
+            <form method="post" class="space-y-4">
+                <label class="block font-semibold">Category:</label>
+                <select name="category" class="w-full p-2 border rounded-lg">
+                    <option value="Settings" {% if element.category == 'Settings' %}selected{% endif %}>Settings</option>
+                    <option value="Cultures" {% if element.category == 'Cultures' %}selected{% endif %}>Cultures</option>
+                    <option value="Magic and Tech" {% if element.category == 'Magic and Tech' %}selected{% endif %}>Magic and Tech</option>
+                    <option value="History" {% if element.category == 'History' %}selected{% endif %}>History</option>
+                    <option value="Races" {% if element.category == 'Races' %}selected{% endif %}>Races</option>
+                </select>
+                <label class="block font-semibold">Description:</label>
+                <textarea name="description" rows="4" class="w-full p-2 border rounded-lg">{{ element.description }}</textarea>
+                <button type="submit" class="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700">Save</button>
+            </form>
+            <a href="/story/{{ story_id }}/chapter/{{ element.chapter_id }}" class="text-blue-600 hover:underline">Back to Chapter</a>
+        </div>
+    </body>
+    </html>
+    ''', element=element, story_id=story_id)
 
 # --- KEY EVENT ADD/EDIT ---
 @app.route('/story/<int:story_id>/event/new', methods=['GET', 'POST'])
