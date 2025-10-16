@@ -995,16 +995,28 @@ def edit_chapter(story_id, chapter_id):
         print(f"Selected prose model: {selected_model}")
         prose_preset = request.form.get('prose_preset', default_prose_preset)
         scene_text = request.form.get('text', '')
-        selected_characters = request.form.getlist('selected_characters_prose')
-        char_str = ', '.join(selected_characters) if selected_characters else 'no characters'
+        selected_character_names = request.form.getlist('selected_characters_prose')
+
+        # Get full character details from database
+        selected_characters = Character.query.filter_by(story_id=story_id).filter(Character.name.in_(selected_character_names)).all() if selected_character_names else []
+        char_details = []
+        for char in selected_characters:
+            details = f"Name: {char.name}"
+            if char.traits:
+                details += f"\nTraits: {char.traits}"
+            if char.backstory:
+                details += f"\nBackstory: {char.backstory}"
+            char_details.append(details)
+
+        char_str = '\n\n'.join(char_details) if char_details else 'no characters'
         chapter_text = chapter.text or ''
         chapter_words = chapter_text.split()
         last_2000 = ' '.join(chapter_words[-2000:]) if len(chapter_words) > 0 else ''
         world_elements_str = '\n'.join([f"- {w.category}: {w.description}" for w in world_elements]) if world_elements else 'None'
         prompt = (
-            f"{prose_preset}\n\nCharacters in scene: {char_str}\nScene: {scene_text}\n\nRecent chapter context (last 2000 words):\n{last_2000}\n\nWorld Building Elements:\n{world_elements_str}"
+            f"{prose_preset}\n\nCharacter Information:\n{char_str}\n\nScene: {scene_text}\n\nRecent chapter context (last 2000 words):\n{last_2000}\n\nWorld Building Elements:\n{world_elements_str}"
         )
-        print(f"DEBUG - Selected prose model {selected_model}: Characters: '{char_str}', Chapter context length: {len(last_2000)} chars, World elements present: {len(world_elements) > 0}")
+        print(f"DEBUG - Selected prose model {selected_model}: Characters selected: {len(selected_characters)}, Chapter context length: {len(last_2000)} chars, World elements present: {len(world_elements) > 0}")
         try:
             response = client.chat.completions.create(
                 model=selected_model,
@@ -1024,16 +1036,28 @@ def edit_chapter(story_id, chapter_id):
         print(f"Selected beat model: {selected_model}")
         beat_preset = request.form.get('beat_preset', default_beat_preset)
         beat_scene_input = request.form.get('beat_scene_input', '')
-        selected_characters_beat = request.form.getlist('selected_characters_beat')
-        char_str_beat = ', '.join(selected_characters_beat) if selected_characters_beat else 'no characters'
+        selected_character_names_beat = request.form.getlist('selected_characters_beat')
+
+        # Get full character details from database
+        selected_characters_beat = Character.query.filter_by(story_id=story_id).filter(Character.name.in_(selected_character_names_beat)).all() if selected_character_names_beat else []
+        char_details_beat = []
+        for char in selected_characters_beat:
+            details = f"Name: {char.name}"
+            if char.traits:
+                details += f"\nTraits: {char.traits}"
+            if char.backstory:
+                details += f"\nBackstory: {char.backstory}"
+            char_details_beat.append(details)
+
+        char_str_beat = '\n\n'.join(char_details_beat) if char_details_beat else 'no characters'
         chapter_text = chapter.text or ''
         chapter_words = chapter_text.split()
         last_2000 = ' '.join(chapter_words[-2000:]) if len(chapter_words) > 0 else ''
         world_elements_str = '\n'.join([f"- {w.category}: {w.description}" for w in world_elements]) if world_elements else 'None'
         beat_prompt = (
-            f"{beat_preset}\n\nCharacters in scene: {char_str_beat}\nBeat/Scene Input: {beat_scene_input}\n\nRecent chapter context (last 2000 words):\n{last_2000}\n\nWorld Building Elements:\n{world_elements_str}"
+            f"{beat_preset}\n\nCharacter Information:\n{char_str_beat}\n\nBeat/Scene Input: {beat_scene_input}\n\nRecent chapter context (last 2000 words):\n{last_2000}\n\nWorld Building Elements:\n{world_elements_str}"
         )
-        print(f"DEBUG - Selected beat model {selected_model}: Characters: '{char_str_beat}', Chapter context length: {len(last_2000)} chars, World elements present: {len(world_elements) > 0}")
+        print(f"DEBUG - Selected beat model {selected_model}: Characters selected: {len(selected_characters_beat)}, Chapter context length: {len(last_2000)} chars, World elements present: {len(world_elements) > 0}")
         try:
             response = client.chat.completions.create(
                 model=selected_model,
